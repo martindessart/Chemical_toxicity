@@ -12,6 +12,8 @@ Freshwater ecosystems play a critical role in supporting biodiversity and provid
 To download the data, go to 1) Data.
 To explore figure plotting and statistical methods, go to 2) Figures.
 
+Data is on CSV file, R code is in .Rmd and plotting in HTML
+
 ## 1) Data
 
 This section contains all CSV files extracted from the videos and used for analysis:
