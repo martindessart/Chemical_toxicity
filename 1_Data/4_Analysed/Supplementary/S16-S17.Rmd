@@ -1,0 +1,92 @@
+---
+title: "Complement data for: Acute and chronic sublethal chemical pollution affects activity, learning and memory in mosquito larvae"
+author: "Martin Dessart"
+date: "08/03/2025"
+output:
+  html_document:
+    toc: true
+    theme: united
+  pdf_document: default
+  word_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,fig.width=15,fig.height=8)
+```
+
+# 0) Setup
+
+```{r,warning=FALSE, message=FALSE}
+#libzzs ---
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+library(car)
+library(emmeans)
+library(report)
+library(ggpubr)
+library(ggtext)
+rm(list=ls())
+set.seed(666) #Fix kernell
+```
+
+# 1) Figure 16
+
+```{r,warning=FALSE, message=FALSE}
+# Open data ----
+setwd("/Users/martinmartin/Downloads/Github/Supplementary/")
+S16<-read.table("S16-size_act.csv", sep="",header=T)
+S16$cond<-as.factor(S16$cond)
+S16$ID<-as.factor(S16$ID)
+S16$expe<-as.factor(S16$expe)
+
+# Plot ----
+yoyo<-c(rep(expression(paste("Silhouette area (px"^2)),10))
+ggplot(S16,aes(x=absdY,y=size))+
+  geom_point(alpha=0.8,size=1.8)+
+  stat_smooth(method=lm,alpha=0.1)+
+  stat_cor(method = "spearman")+
+  theme_classic() +
+  labs(y=yoyo,x="Average speed (mm/sec)")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  theme(legend.title = element_markdown())+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))
+```
+
+
+# 1) Figure 17
+
+```{r,warning=FALSE, message=FALSE}
+# Open data ----
+setwd("/Users/martinmartin/Downloads/Github/Supplementary/")
+S17<-read.table("S17-size_sti.csv", sep="",header=T)
+S17$cond<-as.factor(S17$cond)
+S17$ID<-as.factor(S17$ID)
+S17$cat<-as.factor(S17$cat)
+
+# Plot ----
+yoyo<-c(rep(expression(paste("Silhouette area (px"^2)),10))
+ggplot(S17,aes(x=absdY,y=size))+
+  geom_point(alpha=0.8,size=1.8)+
+  stat_smooth(method=lm,alpha=0.1)+
+  stat_cor(method = "spearman")+
+  theme_classic() +
+  labs(y=yoyo,x="Trial response (mm/sec)")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))
+
+```
+

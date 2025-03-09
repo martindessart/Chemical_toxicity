@@ -1,0 +1,256 @@
+---
+title: "Complement data for: Acute and chronic sublethal chemical pollution affects activity, learning and memory in mosquito larvae"
+author: "Martin Dessart"
+date: "08/03/2025"
+output:
+  html_document:
+    toc: true
+    theme: united
+  pdf_document: default
+  word_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,fig.width=17,fig.height=13)
+```
+## 0) Setup
+
+```{r,warning=FALSE, message=FALSE}
+#libzzs---
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+library(car)
+library(emmeans)
+library(report)
+library(DHARMa)
+rm(list=ls())
+set.seed(666) #Fix kernell
+```
+
+## 1) Import data & affect factors
+
+```{r,warning=FALSE, message=FALSE}
+setwd("/Users/martinmartin/Downloads/DATA/Github/Spray")
+sAll<-read.table("Spray_A2_learning.csv", sep="",header=T)
+sAll$cat<-as.factor(sAll$cat)
+sAll$ID<-as.factor(sAll$ID)
+sAll$pck<-as.factor(sAll$pck)
+sAll$cond<-as.factor(sAll$cond)
+sAll$expe<-as.factor(sAll$expe)
+c1<-"A 2mg/L"
+c2<-"Control N°3"
+
+levels(sAll$cond)
+levels(sAll$cond) <- c(c1,c2)
+sAll$cond<-factor(sAll$cond,levels=c("Control N°3","A 2mg/L"))
+levels(sAll$cond)
+
+```
+
+## 2) Classification
+
+```{r,warning=FALSE, message=FALSE}
+srawAe<-sAll %>% 
+  group_by(cond,expe,ID,cat) %>% 
+  mutate(numbering = row_number()) %>% ungroup()
+
+#Define threshold for being "too much low" to be able to dive
+l1<- max(srawAe$pos_y)-max(srawAe$pos_y)/8
+
+#Define poscondon to differentiate individuals that did not respond versus respond
+lowl1 = -10
+upl1 = +10
+
+scaseAe<-srawAe %>% group_by(cond,ID,cat) %>% 
+  mutate(threshold = case_when(numbering==min(numbering) & pos_y>l1 ~ 1,TRUE~0)) %>% ungroup()
+
+#Count thresholds and sum into "rep" variable
+sfilterAe<-scaseAe %>% 
+  group_by(cond,expe,ID,cat) %>%
+  summarise(rep=sum(threshold,na.rm=T),
+            dY=sum(-dY,na.rm = T),
+            pos_y=mean(pos_y,na.rm=T)) %>%  
+  filter(rep==0) %>% ungroup()
+
+#Split positions according to limit
+sposAe<-sfilterAe %>% 
+  mutate(slope=case_when(dY < lowl1 ~ "down",
+                         dY>upl1 ~ "up",
+                         dY >= lowl1 & dY <= upl1 ~ "flat"))
+s5<-sposAe %>% filter(slope=="up") %>% mutate(rep=1)
+s5b<-sposAe %>% filter(slope=="flat") %>% mutate(rep=0)
+stotAe<-bind_rows(s5,s5b)
+rm(s5,s5b,scaseAe,sposAe,srawAe)
+
+srAe<-stotAe %>% 
+  group_by(cond,cat) %>% 
+  summarise(rep=100*mean(rep,na.rm=TRUE))
+
+stvAe<-sAll %>% 
+  group_by(cond,ID,cat) %>% 
+  summarise(dY=sum(-dY,na.rm = T),
+            pos_y=mean(pos_y,na.rm=T))
+
+complet<-stvAe %>% group_by(cat) %>% count(cat)
+filtered<-stotAe %>% group_by(cat) %>% count(cat)
+filteredcond<-stotAe %>% group_by(cond,cat) %>% count(cond,cat)
+
+rm(stvAe,complet,filtered)
+
+```
+
+## 3) Count number of individuals --> Supp Table T2
+```{r,warning=FALSE, message=FALSE}
+jr<-sAll %>% count(cond,ID)
+jcat<-sAll %>% count(cond,ID,cat)
+yoae<-jcat %>% group_by(cond,ID) %>% count(ID)
+yoae1<-yoae %>% filter(cond==c1)
+yoae2<-yoae %>% filter(cond==c2)
+aebis<-sfilterAe %>% count(cond,ID)
+aebis1<-sfilterAe %>% count(cond,ID,cat)
+yoaebis<-aebis1 %>% group_by(cond,ID) %>% count(ID)
+
+aeter<-stotAe %>% count(cond,ID)
+aeter1<-stotAe %>% count(cond,ID,cat)
+yoaeter<-aeter1 %>% group_by(cond,ID) %>% count(ID)
+
+aeae<-left_join(yoae,yoaebis, by=c("cond"="cond","ID"="ID"))
+aeae2<-left_join(yoaebis,yoaeter, by=c("cond"="cond","ID"="ID"))
+
+print("cond 1")
+print(length(yoae1$ID))
+print(c1)
+aec1<-aeae %>% filter(cond==c1)
+print("trial per ID")
+sum(aec1$n.x)
+print("filtered")
+sum(aec1$n.y)
+aec1<-aeae2 %>% filter(cond==c1)
+print("filter2")
+sum(aec1$n.y)
+
+
+print("cond 2")
+print(length(yoae2$ID))
+print(c2)
+aec2<-aeae %>% filter(cond==c2)
+print("trial per ID")
+sum(aec2$n.x)
+print("filtered")
+sum(aec2$n.y)
+aec2<-aeae2 %>% filter(cond==c2)
+print("filter2")
+sum(aec2$n.y)
+
+rm(stvsAll,complet,filtered,stvsAll,sfiltersAll)
+
+```
+
+
+
+
+## 4) Evaluate trial bias --> Supp Table T3
+```{r,warning=FALSE, message=FALSE}
+R1p<-jcat %>% filter(cond==c1) %>% count(cat)
+R1r<-stotAe %>% filter(cond==c1) %>% count(cat)
+Ra1<-left_join(R1p,R1r,by=(c("cat"="cat")))
+final1<-Ra1 %>% mutate(nz=n.x-n.y)
+chisq.test(final1$nz)
+
+R1p<-jcat %>% filter(cond==c2) %>% count(cat)
+R1r<-stotAe %>% filter(cond==c2) %>% count(cat)
+Ra1<-left_join(R1p,R1r,by=(c("cat"="cat")))
+final1<-Ra1 %>% mutate(nz=n.x-n.y)
+chisq.test(final1$nz)
+
+```
+
+
+## 5) Plot all trials --> Figure 4 A)
+```{r,warning=FALSE, message=FALSE}
+sf3 <- stotAe %>%
+  group_by(cond,cat) %>% 
+  summarise(dY=mean(dY,na.rm=T),
+            rep=mean(rep,na.rm=T)) %>% ungroup()
+sf3$cond<-as.factor(sf3$cond)
+
+st2<-sf3 %>% filter(cond=="Control N°3")
+st5<-sf3 %>% filter(cond=="A 2mg/L")
+
+ggplot(NULL) + 
+  geom_smooth(data=st2, aes(y=dY, x=cat, group=1, color="Control N°3"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_smooth(data=st5, aes(y=dY, x=cat, group=1, color="A 2mg/L"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_point(data=st2, aes(y=dY, x=cat, color="Control N°3"), size=3, shape=15) +
+  geom_point(data=st5, aes(y=dY, x=cat, color="A 2mg/L"), size=3, shape=15) +
+  theme_classic() +
+  labs(y="Vertical Distance (mm)", x="Trial", color="Condition") +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face="bold"),
+        axis.text=element_text(size=20),
+        axis.title=element_text(size=20)) +
+  scale_x_discrete(name="Trial", 
+                   limits=c("1","2","3","4","5","6","7","8","9","10","Test")) +
+  scale_color_manual(values = c("Control N°3"="#54C6CC", "A 2mg/L"="#E37637" 
+                                ))
+```
+
+## 6) Plot trials 1 and Test --> Figure 4 C)
+
+```{r,warning=FALSE, message=FALSE}
+sx<-stotAe %>% 
+  filter(cat==1|cat==10) %>% 
+  group_by(cond,ID,cat) %>%
+  summarise(dY=mean(dY,na.rm = T),
+            rep=mean(rep,na.rm=T)) %>% ungroup()
+sx %>% group_by(cond,cat) %>% count()
+
+dae<-glm(dY~cat*cond, data=sx)
+dx<-sx %>% count(cond,cat)
+yv <- predict(dae,type="link",se.fit=TRUE)
+ydAE<-data.frame(yv$fit,yv$se.fit,sx$cat,sx$cond)
+yd2<-ydAE %>% rename(cond=sx.cond) %>% rename(cat=sx.cat)
+inv<-family(dae)$linkinv
+
+ggplot(sx, aes(x=cat,y=dY))+
+  geom_pointrange(data=yd2,aes(x=cat,y=inv(yv.fit),
+                 ymin=inv(yv.fit-1.96*yv.se.fit),
+                 ymax=inv((yv.fit+1.96*yv.se.fit)),
+                 group=cond,color=cond),size=2,linewidth=3)+
+  geom_point(aes(color=cond))+
+  theme_classic() +
+  labs(y="Vertical Distance (mm)",x="Trial")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=22,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#E37637"))+
+  theme(legend.title = element_text(size=20,color="black"),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 18))+
+  stat_compare_means(comparisons = list(c("1","10")),
+                     aes(label = ..p.signif..),
+                     bracket.size = 1,size=5)+
+  facet_wrap(~cond,nrow=1)
+
+```
+
+## 7) Stats
+
+```{r,warning=FALSE, message=FALSE}
+SR1<-sx %>% filter(cond==c1)
+mR1<-lmerTest::lmer(dY~cat+(1|ID),data=SR1)
+simR1 <- simulateResiduals(fittedModel = mR1, plot = T)
+Anova(mR1)
+emmeans(mR1, pairwise ~ cat,adjust="tukey")
+
+SR2<-sx %>% filter(cond==c2)
+mR2<-lmerTest::lmer(dY~cat+(1|ID),data=SR2)
+simR2 <- simulateResiduals(fittedModel = mR2, plot = T)
+Anova(mR2)
+emmeans(mR2, pairwise ~ cat,adjust="tukey")
+
+```
+

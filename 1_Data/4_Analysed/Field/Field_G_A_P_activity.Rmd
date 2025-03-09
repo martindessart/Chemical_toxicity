@@ -1,0 +1,523 @@
+---
+title: "Complement data for: Acute and chronic sublethal chemical pollution affects activity, learning and memory in mosquito larvae"
+author: "Martin Dessart"
+date: "08/03/2025"
+output:
+  html_document:
+    toc: true
+    theme: united
+  pdf_document: default
+  word_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,fig.width=17,fig.height=13)
+```
+## 0) Setup
+
+```{r,warning=FALSE, message=FALSE}
+#libzzs---
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+library(car)
+library(emmeans)
+library(report)
+library(DHARMa)
+rm(list=ls())
+set.seed(666) #Fix kernell
+```
+
+## 1) Import data & affect factors
+
+```{r,warning=FALSE, message=FALSE}
+setwd("/Users/martinmartin/Downloads/DATA/Github/Field")
+sAll<-read.table("Field_G_A_P_activity.csv", sep="",header=T)
+sA1<-sAll %>% filter(cond=="GC"|cond=="PC") %>% mutate(cond="CC")
+sA2<-sAll %>% filter(cond!="GC"&cond!="PC")
+sAll<-bind_rows(sA1,sA2)
+sAll$cat<-as.factor(sAll$cat)
+sAll$ID<-as.factor(sAll$ID)
+sAll$cond<-as.factor(sAll$cond)
+sAll$expe<-as.factor(sAll$expe)
+levels(sAll$cond)
+c1<-"A 200\u00b5g/L"
+c2<-"A 500\u00b5g/L"
+c3<-"Control N°1"
+c4<-"Control N°2"
+c5<-"G 100\u00b5g/L"
+c6<-"G 200\u00b5g/L"
+c7<-"P 1mg/L"
+c8<-"P 10mg/L"
+levels(sAll$cond) <- c(c1,c2,c3,c4,c5,c6,c7,c8)
+levels(sAll$cond)
+
+yo<-sAll %>% count(cond,ID)
+
+sAll$cond<-factor(sAll$cond,levels=c("Control N°1",
+                                 "A 200\u00b5g/L",
+                                 "A 500\u00b5g/L",
+                                 "Control N°2",
+                                 "G 100\u00b5g/L",
+                                 "G 200\u00b5g/L",
+                                 "P 1mg/L","P 10mg/L"))
+levels(sAll$cond)
+```
+
+## 2) Create new variables
+```{r,warning=FALSE, message=FALSE}
+## Create second and min
+T0<-sAll %>% 
+  group_by(cond,ID) %>% 
+  mutate(time=row_number()) %>%
+  mutate(second=time*0.4) %>% 
+  mutate(min=second/60) %>% 
+  ungroup()
+
+T0$cat<-as.factor(T0$cat)
+T0$ID<-as.factor(T0$ID)
+T0$cond<-as.factor(T0$cond)
+T0$pck<-as.factor(T0$pck)
+T0$expe<-as.factor(T0$expe)
+
+## Create average speed variable
+TaG<-T0 %>% 
+  mutate(sec=round(sec,digits=0)) %>%
+  group_by(cond,ID,sec) %>%
+  summarise(absdY=sum(absdY,na.rm=T))
+Ta2<-TaG %>% 
+  group_by(cond,ID) %>%
+  summarise(absdY=mean(absdY,na.rm=T))
+m1<-glm(absdY~cond, data=Ta2)
+ym1 <- predict(m1,type="link",se.fit=TRUE)
+ydm1<-data.frame(ym1$fit,ym1$se.fit,Ta2$cond)
+fm1<-ydm1 %>% rename(cond=Ta2.cond)
+inm1<-family(m1)$linkinv
+
+## Create Time spent moving by zone
+dpos<-T0 %>% group_by(cond,ID) %>% 
+  summarise(dpos=max(pos_y),
+            size=mean(size,na.rm=T),
+            pos_y=mean(pos_y))
+dist<-mean(dpos$dpos,na.rm=T)
+c<-dist/3
+TZ<-T0 %>% 
+  mutate(count=1) %>% 
+  mutate(Zone = case_when(pos_y < c ~ "Top",
+                          pos_y >= c & pos_y < 2*c ~ "Middle",
+                          pos_y >= 2*c ~ "Bottom")) %>% 
+  group_by(cond,Zone,ID) %>%
+  summarise(count=sum(count,na.rm=T),
+            absdY=mean(absdY,na.rm=T),
+            size=mean(size,na.rm=T),
+            pos_y=mean(pos_y)) %>% ungroup()
+TZ1<-TZ %>% 
+  group_by(cond,Zone) %>%
+  summarise(count=mean(count,na.rm=T),
+            absdY=mean(absdY,na.rm=T),
+            size=mean(size,na.rm=T),
+            pos_y=mean(pos_y))%>% ungroup()
+TZA<-TZ1 %>%group_by(cond) %>%  mutate(spend=100*count/sum(count)) %>% ungroup()
+
+## Create % Time spent moving
+lim<-1
+casef<-T0 %>% 
+  group_by(cond,ID) %>% 
+  mutate(mov = case_when(absdY < lim ~ 0,
+                         absdY >= lim ~ 1)) %>% ungroup()
+iltf<-casef %>% 
+  group_by(cond,ID) %>% 
+  summarise(umov=sum(mov,na.rm=T),
+            n=n(),
+            tmov=(umov/n)*100,
+            sizem=max(size*45/400,na.rm=T),
+            usize=mean(size*45/400,na.rm=T),
+            pos_y=mean(pos_y)) %>% ungroup()
+
+m2<-glm(tmov~cond, data=iltf)
+ym2 <- predict(m2,type="link",se.fit=TRUE)
+ydm2<-data.frame(ym2$fit,ym2$se.fit,iltf$cond)
+fm2<-ydm2 %>% rename(cond=iltf.cond)
+inm2<-family(m2)$linkinv
+
+## Create number of diving events
+TP<-T0 %>% 
+  group_by(cond,ID) %>%
+  summarise(plong=mean(plong,na.rm=T))
+
+m3<-glm(plong~cond, data=TP)
+ym3 <- predict(m3,type="link",se.fit=TRUE)
+ydm3<-data.frame(ym3$fit,ym3$se.fit,TP$cond)
+fm3<-ydm3 %>% rename(cond=TP.cond)
+inm3<-family(m3)$linkinv
+
+rm(casef,dpos,m1,m2,m3,TaG,TZ,TZ1,ydm1,ydm2,ydm3,ym1,ym2,ym3)
+
+```
+
+## 3) Plot ATRAZINE --> Figure S1
+
+```{r,warning=FALSE, message=FALSE}
+
+Ta3<-Ta2 %>% filter(cond==c1|cond==c2|cond==c3)
+fm11<-fm1 %>% filter(cond==c1|cond==c2|cond==c3)
+a<-ggplot(Ta3,aes(x=cond,y=absdY,group=cond,color=cond))+
+  geom_point(alpha=0.8,size=2.5)+
+  geom_pointrange(data=fm11,aes(x=cond,y=inm1(ym1.fit),
+                               ymin=inm1(ym1.fit-1.96*ym1.se.fit),
+                               ymax=inm1((ym1.fit+1.96*ym1.se.fit)),
+                               group=cond,color=cond),size=2,linewidth=3)+
+  
+
+labs(y="Average speed (mm/sec)",x="")+
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#FFD966","#F0B33E","black"
+                              ,"black","black","black","black"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))+
+  stat_compare_means(comparisons = list(
+    c(c3,c1),c(c3,c2)),
+    aes(label = ..p.signif..),
+    bracket.size = 1,size=5)
+
+TZA3<-TZA %>% filter(cond==c1|cond==c2|cond==c3)
+
+b<-ggplot(TZA3)+
+  geom_point(aes(y=Zone,x=cond,size=spend,colour=cond))+
+  theme_classic() +
+  labs(y="Zones",x="")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#FFD966","#F0B33E"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(strip.text = element_text(size = 20))+
+  scale_size(range = c(.1, 30), name="% Time spent")+
+  guides(color = FALSE)+
+  theme(legend.position='none')
+
+
+iltf3<-iltf %>% filter(cond==c1|cond==c2|cond==c3)
+fm21<-fm2 %>% filter(cond==c1|cond==c2|cond==c3)
+
+c<-ggplot(iltf3,aes(x=cond,y=tmov,group=cond,color=cond))+
+  geom_point(alpha=0.8,size=2.5)+
+  geom_pointrange(data=fm21,aes(x=cond,y=inm2(ym2.fit),
+                               ymin=inm2(ym2.fit-1.96*ym2.se.fit),
+                               ymax=inm2((ym2.fit+1.96*ym2.se.fit)),
+                               group=cond,color=cond),size=2,linewidth=3)+
+  theme_classic() +
+  labs(y="Time spent moving (%)",x="")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#FFD966","#F0B33E"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))+
+  stat_compare_means(comparisons = list(
+    c(c3,c1),c(c3,c2)),
+    method.args = list(alternative = "greater"),
+    aes(label = ..p.signif..),
+    bracket.size = 1,size=5)
+
+TP3<-TP %>% filter(cond==c1|cond==c2|cond==c3)
+fm31<-fm3 %>% filter(cond==c1|cond==c2|cond==c3)
+d<-ggplot(TP3,aes(x=cond,y=plong,group=cond,color=cond))+
+  geom_point(alpha=0.8,size=2.5)+
+  geom_pointrange(data=fm31,aes(x=cond,y=inm3(ym3.fit),
+                               ymin=inm3(ym3.fit-1.96*ym3.se.fit),
+                               ymax=inm3((ym3.fit+1.96*ym3.se.fit)),
+                               group=cond,color=cond),size=2,linewidth=3)+
+  theme_classic() +
+  labs(y="Diving events",x="")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#FFD966","#F0B33E"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))+
+  stat_compare_means(comparisons = list(
+    c(c3,c1),c(c3,c2)),
+    aes(label = ..p.signif..),
+    bracket.size = 1,size=5)
+
+ggarrange(a,b,c,d,labels = c("A", "B", "C","D"),
+                    ncol = 2, nrow = 2)
+
+```
+
+
+## 4) Plot GLYPHOSATE --> Figure S2
+
+```{r,warning=FALSE, message=FALSE}
+Ta4<-Ta2 %>% filter(cond==c6|cond==c4|cond==c5)
+fm12<-fm1 %>% filter(cond==c6|cond==c4|cond==c5)
+a<-ggplot(Ta4,aes(x=cond,y=absdY,group=cond,color=cond))+
+  geom_point(alpha=0.8,size=2.5)+
+  geom_pointrange(data=fm12,aes(x=cond,y=inm1(ym1.fit),
+                               ymin=inm1(ym1.fit-1.96*ym1.se.fit),
+                               ymax=inm1((ym1.fit+1.96*ym1.se.fit)),
+                               group=cond,color=cond),size=2,linewidth=3)+
+  labs(y="Average speed (mm/sec)",x="")+
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#EB8176","#941100"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))+
+  stat_compare_means(comparisons = list(
+    c(c4,c5),c(c4,c6)),
+    aes(label = ..p.signif..),
+    bracket.size = 1,size=5)
+
+TZA4<-TZA %>% filter(cond==c6|cond==c4|cond==c5)
+b<-ggplot(TZA4)+
+  geom_point(aes(y=Zone,x=cond,size=spend,colour=cond))+
+  theme_classic() +
+  labs(y="Zones",x="")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#EB8176","#941100"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(strip.text = element_text(size = 20))+
+  scale_size(range = c(.1, 30), name="% Time spent")+
+  guides(color = FALSE)+
+  theme(legend.position='none')
+
+
+iltf4<-iltf %>% filter(cond==c6|cond==c4|cond==c5)
+fm22<-fm2 %>% filter(cond==c6|cond==c4|cond==c5)
+c<-ggplot(iltf4,aes(x=cond,y=tmov,group=cond,color=cond))+
+  geom_point(alpha=0.8,size=2.5)+
+  geom_pointrange(data=fm22,aes(x=cond,y=inm2(ym2.fit),
+                               ymin=inm2(ym2.fit-1.96*ym2.se.fit),
+                               ymax=inm2((ym2.fit+1.96*ym2.se.fit)),
+                               group=cond,color=cond),size=2,linewidth=3)+
+  theme_classic() +
+  labs(y="Time spent moving (%)",x="")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#EB8176","#941100"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))+
+  stat_compare_means(comparisons = list(
+    c(c4,c5),c(c4,c6)),
+    aes(label = ..p.signif..),
+    bracket.size = 1,size=5)
+
+TP4<-TP %>% filter(cond==c6|cond==c4|cond==c5)
+fm32<-fm3 %>% filter(cond==c6|cond==c4|cond==c5)
+d<-ggplot(TP4,aes(x=cond,y=plong,group=cond,color=cond))+
+  geom_point(alpha=0.8,size=2.5)+
+  geom_pointrange(data=fm32,aes(x=cond,y=inm3(ym3.fit),
+                                ymin=inm3(ym3.fit-1.96*ym3.se.fit),
+                                ymax=inm3((ym3.fit+1.96*ym3.se.fit)),
+                                group=cond,color=cond),size=2,linewidth=3)+
+  theme_classic() +
+  labs(y="Diving events",x="")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#EB8176","#941100"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))+
+  stat_compare_means(comparisons = list(
+    c(c4,c5),c(c4,c6)),
+    aes(label = ..p.signif..),
+    bracket.size = 1,size=5)
+
+ggarrange(a,b,c,d,labels = c("A", "B", "C","D"),
+                    ncol = 2, nrow = 2)
+
+```
+
+
+## 5) Plot PARACETAMOL --> Figure S3
+
+```{r,warning=FALSE, message=FALSE}
+Ta5<-Ta2 %>% filter(cond==c7|cond==c8|cond==c4)
+fm13<-fm1 %>% filter(cond==c7|cond==c8|cond==c4)
+a<-ggplot(Ta5,aes(x=cond,y=absdY,group=cond,color=cond))+
+  geom_point(alpha=0.8,size=2.5)+
+  geom_pointrange(data=fm13,aes(x=cond,y=inm1(ym1.fit),
+                               ymin=inm1(ym1.fit-1.96*ym1.se.fit),
+                               ymax=inm1((ym1.fit+1.96*ym1.se.fit)),
+                               group=cond,color=cond),size=2,linewidth=3)+
+  labs(y="Average speed (mm/sec)",x="")+
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#00A1EA","#0070C0"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))+
+  stat_compare_means(comparisons = list(
+    c(c4,c7),c(c4,c8)),
+    aes(label = ..p.signif..),
+    bracket.size = 1,size=5)
+
+TZA5<-TZA %>% filter(cond==c4|cond==c7|cond==c8)
+b<-ggplot(TZA5)+
+  geom_point(aes(y=Zone,x=cond,size=spend,colour=cond))+
+  theme_classic() +
+  labs(y="Zones",x="")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#00A1EA","#0070C0"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(strip.text = element_text(size = 20))+
+  scale_size(range = c(.1, 30), name="% Time spent")+
+  guides(color = FALSE)+
+  theme(legend.position='none')
+
+iltf5<-iltf %>% filter(cond==c7|cond==c8|cond==c4)
+fm23<-fm2 %>% filter(cond==c7|cond==c8|cond==c4)
+c<-ggplot(iltf5,aes(x=cond,y=tmov,group=cond,color=cond))+
+  geom_point(alpha=0.8,size=2.5)+
+  geom_pointrange(data=fm23,aes(x=cond,y=inm2(ym2.fit),
+                               ymin=inm2(ym2.fit-1.96*ym2.se.fit),
+                               ymax=inm2((ym2.fit+1.96*ym2.se.fit)),
+                               group=cond,color=cond),size=2,linewidth=3)+
+  theme_classic() +
+  labs(y="Time spent moving (%)",x="")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#00A1EA","#0070C0"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))+
+  stat_compare_means(comparisons = list(
+    c(c4,c7),c(c4,c8)),
+    aes(label = ..p.signif..),
+    bracket.size = 1,size=5)
+
+TP5<-TP %>% filter(cond==c7|cond==c8|cond==c4)
+fm33<-fm3 %>% filter(cond==c7|cond==c8|cond==c4)
+d<-ggplot(TP5,aes(x=cond,y=plong,group=cond,color=cond))+
+  geom_point(alpha=0.8,size=2.5)+
+  geom_pointrange(data=fm33,aes(x=cond,y=inm3(ym3.fit),
+                               ymin=inm3(ym3.fit-1.96*ym3.se.fit),
+                               ymax=inm3((ym3.fit+1.96*ym3.se.fit)),
+                               group=cond,color=cond),size=2,linewidth=3)+
+  theme_classic() +
+  labs(y="Diving events",x="")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=20,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#00A1EA","#0070C0"))+
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 20))+
+  stat_compare_means(comparisons = list(
+    c(c4,c7),c(c4,c8)),
+    aes(label = ..p.signif..),
+    bracket.size = 1,size=5)
+
+ggarrange(a,b,c,d,labels = c("A", "B", "C","D"),
+                    ncol = 2, nrow = 2)
+
+```
+
+
+## 6) Stats --> Supp Table T4
+
+```{r,warning=FALSE, message=FALSE}
+mH1<-lm(absdY~cond,data=Ta3)
+simH1 <- simulateResiduals(fittedModel = mH1, plot = T)
+Anova(mH1)
+emmeans(mH1, pairwise ~ cond,adjust="tukey")
+
+mH2<-lm(tmov~cond,data=iltf3)
+simH2 <- simulateResiduals(fittedModel = mH2, plot = T)
+Anova(mH2)
+emmeans(mH2, pairwise ~ cond,adjust="tukey")
+
+mH3<-lm(plong~cond,data=TP3)
+simH3 <- simulateResiduals(fittedModel = mH3, plot = T)
+Anova(mH3)
+emmeans(mH3, pairwise ~ cond,adjust="tukey")
+
+mH1<-lm(absdY~cond,data=Ta4)
+simH1 <- simulateResiduals(fittedModel = mH1, plot = T)
+Anova(mH1)
+emmeans(mH1, pairwise ~ cond,adjust="tukey")
+
+mH2<-lm(tmov~cond,data=iltf4)
+simH2 <- simulateResiduals(fittedModel = mH2, plot = T)
+Anova(mH2)
+emmeans(mH2, pairwise ~ cond,adjust="tukey")
+
+mH3<-lm(plong~cond,data=TP4)
+simH3 <- simulateResiduals(fittedModel = mH3, plot = T)
+Anova(mH3)
+emmeans(mH3, pairwise ~ cond,adjust="tukey")
+
+mH1<-lm(absdY~cond,data=Ta5)
+simH1 <- simulateResiduals(fittedModel = mH1, plot = T)
+Anova(mH1)
+emmeans(mH1, pairwise ~ cond,adjust="tukey")
+
+mH2<-lm(tmov~cond,data=iltf5)
+simH2 <- simulateResiduals(fittedModel = mH2, plot = T)
+Anova(mH2)
+emmeans(mH2, pairwise ~ cond,adjust="tukey")
+
+mH3<-lm(plong~cond,data=TP5)
+simH3 <- simulateResiduals(fittedModel = mH3, plot = T)
+Anova(mH3)
+emmeans(mH3, pairwise ~ cond,adjust="tukey")
+
+
+
+```
+

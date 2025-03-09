@@ -1,0 +1,467 @@
+---
+title: "Complement data for: Acute and chronic sublethal chemical pollution affects activity, learning and memory in mosquito larvae"
+author: "Martin Dessart"
+date: "08/03/2025"
+output:
+  html_document:
+    toc: true
+    theme: united
+  pdf_document: default
+  word_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,fig.width=17,fig.height=13)
+```
+## 0) Setup
+
+```{r,warning=FALSE, message=FALSE}
+#libzzs---
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+library(car)
+library(emmeans)
+library(report)
+library(DHARMa)
+rm(list=ls())
+set.seed(666) #Fix kernell
+```
+
+## 1) Import data & affect factors
+
+```{r,warning=FALSE, message=FALSE}
+setwd("/Users/martinmartin/Downloads/DATA/Github/Field")
+sAll<-read.table("Field_G_A_P_learning.csv", sep="",header=T)
+sAll$cat<-as.factor(sAll$cat)
+sAll$ID<-as.factor(sAll$ID)
+sAll$pck<-as.factor(sAll$pck)
+sAll$cond<-as.factor(sAll$cond)
+sAll$expe<-as.factor(sAll$expe)
+sA1<-sAll %>% filter(cond=="GC"|cond=="PC") %>% mutate(cond="CC")
+sA2<-sAll %>% filter(cond!="GC"&cond!="PC")
+sAll<-bind_rows(sA1,sA2)
+sAll$cond<-as.factor(sAll$cond)
+levels(sAll$cond)
+c1<-"A 200\u00b5g/L"
+c2<-"A 500\u00b5g/L"
+c3<-"Control N°1"
+c4<-"Control N°2"
+c5<-"G 100\u00b5g/L"
+c6<-"G 200\u00b5g/L"
+c7<-"P 1mg/L"
+c8<-"P 10mg/L"
+levels(sAll$cond) <- c(c1,c2,c3,c4,c5,c6,c7,c8)
+
+yo<-sAll %>% count(cond,ID)
+
+sAll$cond<-factor(sAll$cond,levels=c("Control N°1",
+                                 "A 200\u00b5g/L",
+                                 "A 500\u00b5g/L",
+                                 "Control N°2",
+                                 "G 100\u00b5g/L",
+                                 "G 200\u00b5g/L",
+                                 "P 1mg/L","P 10mg/L"))
+levels(sAll$cond)
+
+```
+
+## 2) Classification
+
+```{r,warning=FALSE, message=FALSE}
+srawAe<-sAll %>% 
+  group_by(cond,expe,ID,cat) %>% 
+  mutate(numbering = row_number()) %>% ungroup()
+
+#Define threshold for being "too much low" to be able to dive
+l1<- max(srawAe$pos_y)-max(srawAe$pos_y)/8
+
+#Define poscondon to differentiate individuals that did not respond versus respond
+lowl1 = -10
+upl1 = +10
+
+scaseAe<-srawAe %>% group_by(cond,ID,cat) %>% 
+  mutate(threshold = case_when(numbering==min(numbering) & pos_y>l1 ~ 1,TRUE~0)) %>% ungroup()
+
+#Count thresholds and sum into "rep" variable
+sfilterAe<-scaseAe %>% 
+  group_by(cond,expe,ID,cat) %>%
+  summarise(rep=sum(threshold,na.rm=T),
+            dY=sum(-dY,na.rm = T),
+            pos_y=mean(pos_y,na.rm=T)) %>%  
+  filter(rep==0) %>% ungroup()
+
+#Split positions according to limit
+sposAe<-sfilterAe %>% 
+  mutate(slope=case_when(dY < lowl1 ~ "down",
+                         dY>upl1 ~ "up",
+                         dY >= lowl1 & dY <= upl1 ~ "flat"))
+s5<-sposAe %>% filter(slope=="up") %>% mutate(rep=1)
+s5b<-sposAe %>% filter(slope=="flat") %>% mutate(rep=0)
+stotAe<-bind_rows(s5,s5b)
+rm(s5,s5b,scaseAe,sposAe,srawAe)
+
+srAe<-stotAe %>% 
+  group_by(cond,cat) %>% 
+  summarise(rep=100*mean(rep,na.rm=TRUE))
+
+stvAe<-sAll %>% 
+  group_by(cond,ID,cat) %>% 
+  summarise(dY=sum(-dY,na.rm = T),
+            pos_y=mean(pos_y,na.rm=T))
+
+complet<-stvAe %>% group_by(cat) %>% count(cat)
+filtered<-stotAe %>% group_by(cat) %>% count(cat)
+filteredcond<-stotAe %>% group_by(cond,cat) %>% count(cond,cat)
+
+rm(stvAe,complet,filtered)
+
+```
+
+## 3) Count number of individuals --> Supp Table T2
+```{r,warning=FALSE, message=FALSE}
+jr<-sAll %>% count(cond,ID)
+jcat<-sAll %>% count(cond,ID,cat)
+yoae<-jcat %>% group_by(cond,ID) %>% count(ID)
+yoae1<-yoae %>% filter(cond==c1)
+yoae2<-yoae %>% filter(cond==c2)
+yoae3<-yoae %>% filter(cond==c3)
+yoae4<-yoae %>% filter(cond==c4)
+yoae5<-yoae %>% filter(cond==c5)
+yoae6<-yoae %>% filter(cond==c6)
+yoae7<-yoae %>% filter(cond==c7)
+yoae8<-yoae %>% filter(cond==c8)
+aebis<-sfilterAe %>% count(cond,ID)
+aebis1<-sfilterAe %>% count(cond,ID,cat)
+yoaebis<-aebis1 %>% group_by(cond,ID) %>% count(ID)
+
+aeter<-stotAe %>% count(cond,ID)
+aeter1<-stotAe %>% count(cond,ID,cat)
+yoaeter<-aeter1 %>% group_by(cond,ID) %>% count(ID)
+
+aeae<-left_join(yoae,yoaebis, by=c("cond"="cond","ID"="ID"))
+aeae2<-left_join(yoaebis,yoaeter, by=c("cond"="cond","ID"="ID"))
+
+print(c1)
+print(length(yoae1$ID))
+aec1<-aeae %>% filter(cond==c1)
+print("trial per ID")
+sum(aec1$n.x)
+sum(aec1$n.y)
+aec1<-aeae2 %>% filter(cond==c1)
+sum(aec1$n.y)
+
+print(c2)
+print(length(yoae2$ID))
+aec2<-aeae %>% filter(cond==c2)
+print("trial per ID")
+sum(aec2$n.x)
+sum(aec2$n.y)
+aec2<-aeae2 %>% filter(cond==c2)
+sum(aec2$n.y)
+
+print(c3)
+print(length(yoae3$ID))
+aec3<-aeae %>% filter(cond==c3)
+print("trial per ID")
+sum(aec3$n.x)
+sum(aec3$n.y,na.rm=T)
+aec3<-aeae2 %>% filter(cond==c3)
+sum(aec3$n.y)
+
+print(c4)
+print(length(yoae4$ID))
+aec4<-aeae %>% filter(cond==c4)
+print("trial per ID")
+sum(aec4$n.x)
+sum(aec4$n.y,na.rm=T)
+aec4<-aeae2 %>% filter(cond==c4)
+sum(aec4$n.y)
+
+print(c5)
+print(length(yoae5$ID))
+aec5<-aeae %>% filter(cond==c5)
+print("trial per ID")
+sum(aec5$n.x)
+sum(aec5$n.y,na.rm=T)
+aec5<-aeae2 %>% filter(cond==c5)
+sum(aec5$n.y)
+
+print(c6)
+print(length(yoae6$ID))
+aec6<-aeae %>% filter(cond==c6)
+print("trial per ID")
+sum(aec6$n.x)
+sum(aec6$n.y,na.rm=T)
+aec6<-aeae2 %>% filter(cond==c6)
+sum(aec6$n.y)
+
+
+print(c7)
+print(length(yoae7$ID))
+aec7<-aeae %>% filter(cond==c7)
+print("trial per ID")
+sum(aec7$n.x)
+sum(aec7$n.y,na.rm=T)
+aec7<-aeae2 %>% filter(cond==c7)
+sum(aec7$n.y)
+
+print(c8)
+print(length(yoae8$ID))
+aec8<-aeae %>% filter(cond==c8)
+print("trial per ID")
+sum(aec8$n.x)
+sum(aec8$n.y,na.rm=T)
+aec8<-aeae2 %>% filter(cond==c8)
+sum(aec8$n.y)
+
+
+```
+
+
+
+
+## 4) Evaluate trial bias --> Supp Table T3
+```{r,warning=FALSE, message=FALSE}
+print(c1)
+R1p<-jcat %>% filter(cond==c1) %>% count(cat)
+R1r<-stotAe %>% filter(cond==c1) %>% count(cat)
+Ra1<-left_join(R1p,R1r,by=(c("cat"="cat")))
+final1<-Ra1 %>% mutate(nz=n.x-n.y)
+chisq.test(final1$nz)
+
+print(c2)
+R1p<-jcat %>% filter(cond==c2) %>% count(cat)
+R1r<-stotAe %>% filter(cond==c2) %>% count(cat)
+Ra1<-left_join(R1p,R1r,by=(c("cat"="cat")))
+final1<-Ra1 %>% mutate(nz=n.x-n.y)
+chisq.test(final1$nz)
+
+print(c3)
+R1p<-jcat %>% filter(cond==c3) %>% count(cat)
+R1r<-stotAe %>% filter(cond==c3) %>% count(cat)
+Ra1<-left_join(R1p,R1r,by=(c("cat"="cat")))
+final1<-Ra1 %>% mutate(nz=n.x-n.y)
+chisq.test(final1$nz)
+
+print(c4)
+R1p<-jcat %>% filter(cond==c4) %>% count(cat)
+R1r<-stotAe %>% filter(cond==c4) %>% count(cat)
+Ra1<-left_join(R1p,R1r,by=(c("cat"="cat")))
+final1<-Ra1 %>% mutate(nz=n.x-n.y)
+chisq.test(final1$nz)
+
+print(c5)
+R1p<-jcat %>% filter(cond==c5) %>% count(cat)
+R1r<-stotAe %>% filter(cond==c5) %>% count(cat)
+Ra1<-left_join(R1p,R1r,by=(c("cat"="cat")))
+final1<-Ra1 %>% mutate(nz=n.x-n.y)
+chisq.test(final1$nz)
+
+print(c6)
+R1p<-jcat %>% filter(cond==c6) %>% count(cat)
+R1r<-stotAe %>% filter(cond==c6) %>% count(cat)
+Ra1<-left_join(R1p,R1r,by=(c("cat"="cat")))
+final1<-Ra1 %>% mutate(nz=n.x-n.y)
+chisq.test(final1$nz)
+
+print(c7)
+R1p<-jcat %>% filter(cond==c7) %>% count(cat)
+R1r<-stotAe %>% filter(cond==c7) %>% count(cat)
+Ra1<-left_join(R1p,R1r,by=(c("cat"="cat")))
+final1<-Ra1 %>% mutate(nz=n.x-n.y)
+chisq.test(final1$nz)
+
+print(c8)
+R1p<-jcat %>% filter(cond==c8) %>% count(cat)
+R1r<-stotAe %>% filter(cond==c8) %>% count(cat)
+Ra1<-left_join(R1p,R1r,by=(c("cat"="cat")))
+final1<-Ra1 %>% mutate(nz=n.x-n.y)
+chisq.test(final1$nz)
+
+
+```
+
+
+
+## 5) Plot all trials --> Figure 2) A), B), C)
+
+```{r,warning=FALSE, message=FALSE}
+sf3 <- stotAe %>%
+  group_by(cond,cat) %>% 
+  summarise(dY=mean(dY,na.rm=T),
+            rep=mean(rep,na.rm=T)) %>% ungroup()
+sf3$cond<-as.factor(sf3$cond)
+
+
+st1<-sf3 %>% filter(cond=="Control N°1")
+st2<-sf3 %>% filter(cond=="A 200\u00b5g/L")
+st3<-sf3 %>% filter(cond=="A 500\u00b5g/L")
+st4<-sf3 %>% filter(cond=="Control N°2")
+st5<-sf3 %>% filter(cond=="P 1mg/L")
+st6<-sf3 %>% filter(cond=="P 10mg/L")
+st7<-sf3 %>% filter(cond=="G 100\u00b5g/L")
+st8<-sf3 %>% filter(cond=="G 200\u00b5g/L")
+
+
+print("ATRAZINE")
+ggplot(NULL) + 
+  geom_smooth(data=st1, aes(y=dY, x=cat, group=1, color="Control N°1"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_smooth(data=st2, aes(y=dY, x=cat, group=1, color="A 200\u00b5g/L"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_smooth(data=st3, aes(y=dY, x=cat, group=1, color="A 500\u00b5g/L"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_point(data=st1, aes(y=dY, x=cat, color="Control N°1"), size=3, shape=15) +
+  geom_point(data=st2, aes(y=dY, x=cat, color="A 200\u00b5g/L"), size=3, shape=15) +
+  geom_point(data=st3, aes(y=dY, x=cat, color="A 500\u00b5g/L"), size=3, shape=15) +
+  theme_classic() +
+  labs(y="Vertical Distance (mm)", x="Trial", color="Condition") +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face="bold"),
+        axis.text=element_text(size=20),
+        axis.title=element_text(size=20)) +
+  scale_x_discrete(name="Trial", 
+                   limits=c("1","2","3","4","5","6","7","8","9","10","Test")) +
+  scale_color_manual(values = c("Control N°1"="#54C6CC", "A 200\u00b5g/L"="#FFD966", 
+                                "A 500\u00b5g/L"="#F0B33E"))
+
+print("PARACETAMOL")
+ggplot(NULL) + 
+  geom_smooth(data=st4, aes(y=dY, x=cat, group=1, color="Control N°2"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_smooth(data=st5, aes(y=dY, x=cat, group=1, color="P 1mg/L"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_smooth(data=st6, aes(y=dY, x=cat, group=1, color="P 10mg/L"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_point(data=st4, aes(y=dY, x=cat, color="Control N°2"), size=3, shape=15) +
+  geom_point(data=st5, aes(y=dY, x=cat, color="P 1mg/L"), size=3, shape=15) +
+  geom_point(data=st6, aes(y=dY, x=cat, color="P 10mg/L"), size=3, shape=15) +
+  theme_classic() +
+  labs(y="Vertical Distance (mm)", x="Trial", color="Condition") +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face="bold"),
+        axis.text=element_text(size=20),
+        axis.title=element_text(size=20)) +
+  scale_x_discrete(name="Trial", 
+                   limits=c("1","2","3","4","5","6","7","8","9","10","Test")) +
+  scale_color_manual(values = c("Control N°2"="#54C6CC", "P 1mg/L"="#00A1EA", 
+                                "P 10mg/L"="#0070C0"))
+
+print("GLYPHOSATE")
+ggplot(NULL) + 
+  geom_smooth(data=st4, aes(y=dY, x=cat, group=1, color="Control N°2"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_smooth(data=st7, aes(y=dY, x=cat, group=1, color="G 100\u00b5g/L"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_smooth(data=st8, aes(y=dY, x=cat, group=1, color="G 200\u00b5g/L"), method="gam",
+              formula = y ~ s(x, bs="ps", fx=FALSE, k=-1)) +
+  geom_point(data=st4, aes(y=dY, x=cat, color="Control N°2"), size=3, shape=15) +
+  geom_point(data=st7, aes(y=dY, x=cat, color="G 100\u00b5g/L"), size=3, shape=15) +
+  geom_point(data=st8, aes(y=dY, x=cat, color="G 200\u00b5g/L"), size=3, shape=15) +
+  theme_classic() +
+  labs(y="Vertical Distance (mm)", x="Trial", color="Condition") +
+  theme(plot.title = element_text(hjust = 0.5, size=22, face="bold"),
+        axis.text=element_text(size=20),
+        axis.title=element_text(size=20)) +
+  scale_x_discrete(name="Trial", 
+                   limits=c("1","2","3","4","5","6","7","8","9","10","Test")) +
+  scale_color_manual(values = c("Control N°2"="#54C6CC", "G 100\u00b5g/L"="#EB8176", 
+                                "G 200\u00b5g/L"="#941100"))
+
+```
+
+## 6) Plot trials 1 and Test --> Figure 2 D)
+
+```{r,warning=FALSE, message=FALSE}
+sx<-stotAe %>% 
+  filter(cat==1|cat==10) %>% 
+  group_by(cond,ID,cat) %>%
+  summarise(dY=mean(dY,na.rm = T),
+            rep=mean(rep,na.rm=T)) %>% ungroup()
+sx %>% group_by(cond,cat) %>% count()
+
+dae<-glm(dY~cat*cond, data=sx)
+dx<-sx %>% count(cond,cat)
+yv <- predict(dae,type="link",se.fit=TRUE)
+ydAE<-data.frame(yv$fit,yv$se.fit,sx$cat,sx$cond)
+yd2<-ydAE %>% rename(cond=sx.cond) %>% rename(cat=sx.cat)
+inv<-family(dae)$linkinv
+
+ggplot(sx, aes(x=cat,y=dY))+
+  geom_pointrange(data=yd2,aes(x=cat,y=inv(yv.fit),
+                 ymin=inv(yv.fit-1.96*yv.se.fit),
+                 ymax=inv((yv.fit+1.96*yv.se.fit)),
+                 group=cond,color=cond),size=2,linewidth=3)+
+  geom_point(aes(color=cond))+
+  theme_classic() +
+  labs(y="Vertical Distance (mm)",x="Trial")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(plot.title = element_text(size=22,face = "bold"))+
+  theme(axis.text=element_text(size=20,color="black"),
+        axis.title=element_text(size=20,color="black"))+
+  scale_color_manual(values=c("#54C6CC","#FFD966","#F0B33E","#54C6CC","#EB8176","#941100",
+                             "#00A1EA","#0070C0"))+
+  theme(legend.title = element_text(size=20,color="black"),
+        legend.text = element_text(size=20))+
+  guides(colour=guide_legend(title="Species"))+
+  theme(legend.position = "none",
+        strip.text = element_text(size = 18))+
+  stat_compare_means(comparisons = list(c("1","10")),
+                     aes(label = ..p.signif..),
+                     bracket.size = 1,size=5)+
+  facet_wrap(~cond,nrow=1)
+
+```
+
+## 7) Stats
+
+```{r,warning=FALSE, message=FALSE}
+SR1<-sx %>% filter(cond==c1)
+mR1<-lmerTest::lmer(dY~cat+(1|ID),data=SR1)
+simR1 <- simulateResiduals(fittedModel = mR1, plot = T)
+Anova(mR1)
+emmeans(mR1, pairwise ~ cat,adjust="tukey")
+
+SR2<-sx %>% filter(cond==c2)
+mR2<-lmerTest::lmer(dY~cat+(1|ID),data=SR2)
+simR2 <- simulateResiduals(fittedModel = mR2, plot = T)
+Anova(mR2)
+emmeans(mR2, pairwise ~ cat,adjust="tukey")
+
+SR3<-sx %>% filter(cond==c3)
+mR3<-lmerTest::lmer(dY~cat+(1|ID),data=SR3)
+simR3 <- simulateResiduals(fittedModel = mR3, plot = T)
+Anova(mR3)
+emmeans(mR3, pairwise ~ cat,adjust="tukey")
+
+SR4<-sx %>% filter(cond==c4)
+mR4<-lmerTest::lmer(dY~cat+(1|ID),data=SR4)
+simR4 <- simulateResiduals(fittedModel = mR4, plot = T)
+Anova(mR4)
+emmeans(mR4, pairwise ~ cat,adjust="tukey")
+
+SR5<-sx %>% filter(cond==c5)
+mR5<-lmerTest::lmer(dY~cat+(1|ID),data=SR5)
+simR5 <- simulateResiduals(fittedModel = mR5, plot = T)
+Anova(mR5)
+emmeans(mR5, pairwise ~ cat,adjust="tukey")
+
+SR6<-sx %>% filter(cond==c5)
+mR6<-lmerTest::lmer(dY~cat+(1|ID),data=SR6)
+simR6 <- simulateResiduals(fittedModel = mR6, plot = T)
+Anova(mR6)
+emmeans(mR6, pairwise ~ cat,adjust="tukey")
+
+SR7<-sx %>% filter(cond==c7)
+mR7<-lmerTest::lmer(dY~cat+(1|ID),data=SR7)
+simR7 <- simulateResiduals(fittedModel = mR7, plot = T)
+Anova(mR7)
+emmeans(mR7, pairwise ~ cat,adjust="tukey")
+
+SR8<-sx %>% filter(cond==c8)
+mR8<-lmerTest::lmer(dY~cat+(1|ID),data=SR8)
+simR8 <- simulateResiduals(fittedModel = mR8, plot = T)
+Anova(mR8)
+emmeans(mR8, pairwise ~ cat,adjust="tukey")
+
+
+```
+
